@@ -1,0 +1,298 @@
+---
+title: "Pràctica 2"
+author: "Joan Ribera i Jordi Fuster"
+date: "Gener 2020"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    #html_document
+---
+
+# 1. Descripció del dataset. Perquè és important i quina pregunta/problema pretén respondre?
+Com ja es va comentar a la pràctica 1, en els darrers anys a Andorra s'ha experimentat un creixement molt important dels preus dels pisos de lloguer degut a una disminució de l'oferta i un increment de la demanda. Aquesta situació ha comportat que el preu de l'habitatge s'hagi convertit en la primera preocupació pel 41,1% de la població, segons l'enquesta de l'Observatori del CRES del primer semestre del 2018.
+
+Com ja es va explicar en la primera pràctica, aquesta situació no es veu reflectida a les dades que publica el Departament d'Estadística d'Andorra segons les dades de l'Enquesta de Pressupostos Familiars, ja que els contractes de lloguer antics disminueixen la mitjana dels preus pagats. 
+
+Amb les dades obtingudes del portal d'anuncis www.buscocasa.ad, l'objectiu serà analitzar el preu mitjà i el preu mitjà per metre quadrat dels habitatges que s'oferten per donar informació complementaria a la que ofereix l'estadística oficial. Així, no obtindrem el que es paga de mitjana, sinó el que costaria de mitjana llogar un habitatge.
+
+També interessarà comparar els preus i les característiques dels habitatges de les dues parròquies centrals: Andorra la Vella i Escaldes.
+
+El dataset conté:
+
+- descripcio (Caràcter): Descripció completa de l'anunci.
+
+- tipusHabitatge (Caràcter): Tipologia d'habitatge (pis,casa, xalet, etc.)
+
+- poble (Caràcter): Poble on es troba l'habitatge
+
+- parroquia (Caràcter): Parròquia on es troba l'habitatge
+
+- dataAnunci (Data): Data de publicació de l'anunci
+
+- m2 (Numèric): Metres quadrats que té el pis
+
+- numHabitacions (Numèric): Nombre d'habitacions de l'habitatge
+
+- tipusOferta (Caràcter): Tipus d'oferta de l'anunci: lloguer, propietat
+
+- numVisites (Numèric): Nombre de visites que ha rebut l'anunci
+
+- preu (Numèric): Preu al que s'anuncia l'habitatge.
+
+
+# 2. Integració i selecció de les dades d'interès a analitzar.
+Les dades que utilitzarem seran:
+- Parroquia/Poble: per detectar diferències entre preus de diferents parròquies
+- m2: per calcular posteriorment el preu per metre quadrat (desprès d'imputar)
+- nombre d'habitacions: per calcular preus en funció de les habitacions
+- Preu: per calcular el preu i el preu per metre quadrat.
+
+```{r a1, include=TRUE, warning=FALSE, message=FALSE}
+#Carreguem les dades
+library(readr)
+anuncis_habitatges_andorra <- read_delim("C:/Users/jordi/OneDrive/Desktop/anuncis_habitatges_andorra.csv", 
+    "\t", escape_double = FALSE, trim_ws = TRUE)
+
+#anuncis_habitatges_andorra<- read.csv(file="~/Desktop/anuncis_habitatges_andorra.csv",
+#                                     header=TRUE, sep="\t")
+
+
+head(anuncis_habitatges_andorra)
+```
+
+
+# 3. Neteja de les dades.
+## 3.1. Les dades contenen zeros o elements buits? Com gestionaries aquests casos?
+```{r a2, include=TRUE, warning=FALSE, message=FALSE}
+summary(anuncis_habitatges_andorra$m2)
+summary(anuncis_habitatges_andorra$numHabitacions)
+summary(anuncis_habitatges_andorra$preu)
+
+#La variable m2 presenta missings que els tractarem imputant a posteriori, perquè ens serviran per calcular els preus per m2. 
+
+#imputar m2 per la mitjana. Utilitzarem el paquet Hmisc per a fer-ho.
+anuncis_habitatges_andorra1<-anuncis_habitatges_andorra
+library(Hmisc)
+anuncis_habitatges_andorra1$m2 <- with(anuncis_habitatges_andorra1, impute(m2, mean))
+summary(anuncis_habitatges_andorra1$m2)
+
+anuncis_habitatges_andorra1$m2<-as.numeric(anuncis_habitatges_andorra1$m2)
+
+```
+
+## 3.2. Identificació i tractament de valors extrems.
+```{r a3, include=TRUE, warning=FALSE, message=FALSE}
+boxplot(anuncis_habitatges_andorra1$m2, main="Boxplot dels metres quadrats dels habitatges")
+boxplot(anuncis_habitatges_andorra1$numHabitacions, main="Boxplot del nombre d'habitacions dels habitatges")
+boxplot(anuncis_habitatges_andorra1$preu, main="Boxplot del preu dels habitatges")
+
+#La variable m2 presenta uns valors extrems, però que poden ser reals. (habitatges amb molts metres quadrats). Els deixarem a la mostra. 
+#La variable m2 presenta valors molt petits: 12 m2. Revisant la taula, observem que a la descripció ho defineix com a despatxos de 12m2. Per tant, els traiem de la mostra.
+anuncis_habitatges_andorra2<- subset(anuncis_habitatges_andorra1, anuncis_habitatges_andorra1$m2>12 | is.na(anuncis_habitatges_andorra$m2)>0)
+
+
+#La variable numHabitacions no presenta cap valor outlier.
+
+#La variable preu presenta uns valors extrems compatibles amb un error. Concretament, el programa havia extret els valors per als habitatges de lloguer, però aquests valors tant elevats ens fan pensar que són habitatges en venda, que s'han posat com a lloguer.
+
+# Eliminarem aquells anuncis que estan anunciats com lloguer, però realment són per venda.
+row.names(anuncis_habitatges_andorra2) <- 1:nrow(anuncis_habitatges_andorra2)
+outlier_values <- boxplot.stats(anuncis_habitatges_andorra2$preu, coef=12)$out  # 
+
+# Els outliers trobats són:
+boxplot.stats(anuncis_habitatges_andorra2$preu, coef=12)$out
+
+anuncis_habitatges_andorra2<-anuncis_habitatges_andorra2[!(anuncis_habitatges_andorra2$preu) %in% outlier_values,]
+
+
+# Treiem els espais al final del string de parròquia.
+anuncis_habitatges_andorra2$parroquia<-trimws(anuncis_habitatges_andorra2$parroquia, "b")
+
+boxplot(anuncis_habitatges_andorra2$preu, main="Boxplot del preu un cop eliminat outliers")
+
+#Creem la variable de preu per metre quadrat.
+anuncis_habitatges_andorra2$pm2<-anuncis_habitatges_andorra2$preu/anuncis_habitatges_andorra2$m2
+```
+
+
+# 4. Anàlisi de les dades.
+## 4.1. Selecció dels grups de dades que es volen analitzar/comparar (planificació dels anàlisis a aplicar).
+```{r a400, include=TRUE, warning=FALSE, message=FALSE}
+# 1. Farem un anàlisis comparant el preu i el preu per metre quadrat en les dues parròquies més grans d'andorra: Escaldes-Engordany i Andorra la Vella.
+parroquies_centrals<-subset(anuncis_habitatges_andorra2, parroquia != "la massana")
+
+# 2. Farem un anàlisi de correlacions entre les diferènts variables estudiades preu, preum2 i m2, així com d'habitacions dels habitatges
+
+# 3. També farem un model per predir el preu dels habitatges en funció dels m2.
+
+# 4. Finalment, farem un anàlisis de les diferències que hi pot haver entre parròquies.
+
+```
+
+## 4.2. Comprovació de la normalitat i homogeneïtat de la variància.
+```{r a40, include=TRUE, warning=FALSE, message=FALSE}
+# Realitzarem un histograma de les dades (preu, preum2 i m2), per a veure la distribució de les dades
+hist(anuncis_habitatges_andorra2$pm2)
+hist(anuncis_habitatges_andorra2$m2)
+hist(anuncis_habitatges_andorra2$preu)
+
+# Realitzarem un test de normalitat
+shapiro.test(anuncis_habitatges_andorra2$pm2)
+shapiro.test(anuncis_habitatges_andorra2$m2)
+shapiro.test(anuncis_habitatges_andorra2$preu)
+# Les variables tenen un pvalor inferior a 0.05 i per tant no segueixen una distribució normal.
+
+# A continuació farem un test de homogenietat de variances, per a descubrir si hi ha diferències entre les varianciès del preu, preum2 i m2 de andorra la vella i escaldes.
+var.test(pm2~parroquia, data = parroquies_centrals)
+var.test(m2~parroquia, data = parroquies_centrals)
+var.test(preu~parroquia, data = parroquies_centrals)
+
+# Trobem que hi ha diferències de variancies entre les dues parròquies
+
+```
+## 4.3. Aplicació de proves estadístiques per comparar els grups de dades. En funció de les dades i de l'objectiu de l'estudi, aplicar proves de contrast d'hipòtesis, correlacions, regressions, etc. Aplicar almenys tres mètodes d'anàlisi diferents.
+```{r a4, include=TRUE, warning=FALSE, message=FALSE}
+# 1. Correlació. 
+
+library(psych)
+pairs.panels(parroquies_centrals[,c(7,8,11,12)], 
+             method = "pearson", 
+             hist.col = "#00AFBB",
+             density = TRUE,  
+             ellipses = FALSE 
+             )
+# Es troba una correlació positiva important entre les variables preu i metre quadrat (0,88). Això s'interpreta com que a més metres quadrats, més car és el lloguer de l'habitatge.
+# La resta de variables presenten correlacións més petites (a més habitacions/metres quadrats més preu)
+
+# 2. Model lineal. Regressió
+# Realitzem un model lineal per a predir el preu de l'habitatge segons els metres quadrats, la parròquia de l'habitatge i el nombre d'habitacions.
+model<-lm(preu~parroquia+m2+numHabitacions, data=parroquies_centrals)
+summary(model)
+
+# Només el coeficient dels m2 surt significatiu, per tant, es pot prescindir de la resta de variables per a una segona predicció.
+# S'obté un R2 ajustat de 0.707
+
+#Es pot comprovar la distribució dels errors, la heterocedasticitat, els registres amb més pes en el model, etc, amb la següent funció.
+#plot(model)
+
+# Aplicant el mètode de Akaike, s'obté que només és necessàri el predictor de m2, ja que és el únic significatiu, i és el que et fa més eficient el model amb un millor ajust.
+step(model)
+model<-lm(preu~m2, data=parroquies_centrals)
+summary(model)
+# S'obté un R2 ajustat de 0.7717
+
+# Utilitzarem el model per a fer prediccions de preu en funció dels metres quadrats.
+# Si tenim un habitatge de 100m2, el preu aproximat de lloguer serà de 1.179€.
+predict(model, data.frame(m2 = 100))
+
+# 3. Al no disposar de dades normals utilitzarem un mètode no paramètric per a la comparació de mitjanes. Farem un contrast d'hiòtesis per la mitjana del preu per metre quadrat de la parròquia d'escaldes amb la d'andorra la vella.
+wilcox.test(pm2 ~ parroquia, data=parroquies_centrals) 
+
+# Al tenir un pvalor de 0.57, es pot afirmar que no hi ha diferències del preu per metre quadrat entre parròquies.
+```
+
+# 5. Representació dels resultats a partir de taules i gràfiques.
+```{r a5, include=TRUE, warning=FALSE, message=FALSE}
+library(plyr)
+#estadística descriptiva del preu de lloguer per parròquia
+ddply(parroquies_centrals, .(parroquia), summarize,
+      minim=min(preu,na.rm = TRUE),
+      mitjana = round(mean(preu,na.rm = TRUE), 2),
+      maxim=max(preu,na.rm = TRUE),
+      mediana = round(median(preu,na.rm = TRUE), 2),
+      desviacio = round(sd(preu,na.rm = TRUE), 2),
+      preu_m2=round(mean(pm2,na.rm=TRUE),2),
+      habitacions=round(mean(numHabitacions, na.rm=TRUE),0),
+      metres_quadrats=round(mean(m2, na.rm=TRUE),1),
+      n=length(preu))
+ddply(parroquies_centrals, .(numHabitacions, parroquia), summarize,
+      minim=min(preu,na.rm = TRUE),
+      mitjana = round(mean(preu,na.rm = TRUE), 2),
+      maxim=max(preu,na.rm = TRUE),
+      mediana = round(median(preu,na.rm = TRUE), 2),
+      desviacio = round(sd(preu,na.rm = TRUE), 2),
+      preu_m2=round(mean(pm2,na.rm=TRUE),2),
+      habitacions=round(mean(numHabitacions, na.rm=TRUE),0),
+      metres_quadrats=round(mean(m2, na.rm=TRUE),1),
+      n=length(preu))
+
+# Library
+#################################################
+library(leaflet)
+
+# Com les dades són de territori, aprofitarem per afegir les coordenades i fer un mapa
+quakes<-ddply(parroquies_centrals, .(parroquia), summarize,
+              minim=min(preu,na.rm = TRUE),
+              mitjana = round(mean(preu,na.rm = TRUE), 2),
+              maxim=max(preu,na.rm = TRUE),
+              mediana = round(median(preu,na.rm = TRUE), 2),
+              desviacio = round(sd(preu,na.rm = TRUE), 2),
+              preu_m2=round(mean(pm2,na.rm=TRUE),2),
+              habitacions=round(mean(numHabitacions, na.rm=TRUE),0),
+              metres_quadrats=round(mean(m2, na.rm=TRUE),1),
+              n=length(preu))
+quakes$lat[quakes$parroquia =="andorra la vella"] = 42.5077896
+quakes$long[quakes$parroquia =="andorra la vella"] = 1.52109
+quakes$lat[quakes$parroquia =="escaldes"] = 42.5072899
+quakes$long[quakes$parroquia =="escaldes"] = 1.53414
+
+quakes$preu<-round(quakes$preu,1)
+quakes$metres_quadrats<-round(quakes$metres_quadrats,0)
+quakes$habitacions<-round(quakes$habitacions,1)
+
+# Create a color palette with handmade bins.
+mybins=seq(11, 12.4, by=0.2)
+mypalette = colorBin( palette="YlOrBr", domain=quakes$preu_m2, na.color="transparent", bins=mybins)
+
+# Prepar the text for the tooltip:
+mytext=paste("<B> Parròquia: ", quakes$parroquia, " </B> <br/>", "Preu mitjà de lloguer: ", quakes$preu,
+             "<br/>", "Nombre d'habitacions: ", quakes$habitacions, "<br/>", "Preu mitjà per m2: ", quakes$preu_m2,
+             "<br/>", "Metres quadrats: ", quakes$metres_quadrats,"<br/>", "Nombre de vivendes disponibles: ", quakes$n, "<br/>", sep="") %>%
+  lapply(htmltools::HTML)
+
+#mapa a R
+leaflet(quakes) %>% 
+  setView( lat=42.5072456 , lng=1.531254 , zoom=14) %>%
+  addProviderTiles("Esri.WorldImagery") %>%
+  addTiles() %>%
+  addCircleMarkers(~long, ~lat, 
+                   fillColor = ~mypalette(preu_m2), fillOpacity = 0.7, color="white", radius=15, stroke=FALSE,
+                   label = mytext,
+                   labelOptions = labelOptions( style = list("font-weight" = "normal", padding = "3px 8px"), textsize = "13px", direction = "auto")
+  ) %>%
+  addLegend( pal=mypalette, values=~preu, opacity=0.9, title = "Preu mitjà per metre quadrat", position = "bottomright" )
+
+#################################################
+library(ggplot2)
+ggplot(parroquies_centrals, aes(x=parroquia))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal()
+ggplot(parroquies_centrals, aes(x=parroquia, y=preu))+
+  geom_bar(fun.y="mean", stat = "summary")
+  theme_minimal()
+ggplot(parroquies_centrals, aes(x=parroquia, y=pm2))+
+  geom_bar(fun.y="mean", stat = "summary")
+  theme_minimal()
+ggplot(parroquies_centrals, aes(x=parroquia, y=m2))+
+  geom_bar(fun.y="mean", stat = "summary")
+  theme_minimal()
+```
+
+# 6. Resolució del problema. A partir dels resultats obtinguts, quines són les conclusions? Els resultats permeten respondre al problema?
+
+Els resultats obtinguts són que la oferta en els portals d'internet d'habitatge presenten una mitjana de preus de 1461,68€ en el cas d'Andorra la vella i una mitjana de 1287,67€ en el cas d'escaldes.
+
+Aquests resultats corresponen a una mitjana de 11,54€ per metre quadrat (135,6 m2 de mitjana) en el cas d'Andorra la vella i de 12,06€ (107,6m2 de mitjana). El nombre més habitual d'habitacions és de 3 en les dues parròquies.
+
+Aquests valors són significativament diferents als que es publica de mitjana segons l'Enquesta de Pressupostos Familiars, que es situa al voltan de 9 euros el m2. Per tant, els habitatges ofertats són més cars que els que hi ha actualment ja llogats.
+
+Entre parròquies, s'ha de destacar que les parròquies centrals no presenten diferències significatives en el seu preu per m2 segons el test de mann-whitney-wilcoxon.
+
+
+# 7. Codi: Cal adjuntar el codi, preferiblement en R, amb el que s'ha realitzat la neteja, anàlisi i representació de les dades. Si ho preferiu, també podeu treballar en Python.
+```{r a6, include=TRUE, warning=FALSE, message=FALSE}
+write.csv2(anuncis_habitatges_andorra2, "C:/Users/jordi/OneDrive/Desktop/dades_posteriors.csv")
+
+data.frame("Autor"=c("Jordi Fuster i Joan Ribera", "Jordi Fuster i Joan Ribera", "Jordi Fuster i Joan Ribera"), "Contribucions"=c("Investigació prèvia", "Redacció de respostes", "Desenvolupament del codi"))
+```
+
